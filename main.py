@@ -26,6 +26,10 @@ from pydantic import BaseModel
 import jwt
 import httpx
 
+from logger import get_logger
+
+log = get_logger(__name__)
+
 ######### Move into config.py
 
 # ============================================================
@@ -50,31 +54,8 @@ _user_sessions = {}
 _content_cache = {}
 _request_count = 0
 _last_error = None
-_debug_messages = []
 _system_start_time = time.time()
 spaghetti_handler = None  # Gets set later. Maybe. Depends on the moon phase.
-
-# Debug mode: set DEBUG_MODE=chaos for a good time
-DEBUG_MODE = os.getenv("DEBUG_MODE", "off")
-
-def chaos_log(msg):
-    """Log messages when chaos mode is enabled. Kevin thought this was hilarious."""
-    if DEBUG_MODE == "chaos":
-        chaos_prefixes = [
-            "[CHAOS] ",
-            "[HERE BE DRAGONS] ",
-            "[HOLD MY BEER] ",
-            "[WHAT COULD GO WRONG] ",
-            "[YOLO DEPLOY] ",
-            "[WORKS ON MY MACHINE] ",
-            "[FRIDAY 5PM PUSH] ",
-            "[NO TESTS NEEDED] ",
-        ]
-        prefix = random.choice(chaos_prefixes)
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        full_msg = f"{prefix}[{timestamp}] {msg}"
-        print(full_msg)
-        _debug_messages.append(full_msg)
 
 
 
@@ -87,7 +68,7 @@ def chaos_log(msg):
 
 def init_db():
     """Initialize the database. All tables in one function because modularity is overrated."""
-    chaos_log("Summoning the database from the void...")
+    log.debug("Initializing database")
     conn = sqlite3.connect(DATABASE_PATH)
     c = conn.cursor()
 
@@ -145,7 +126,7 @@ def init_db():
 
     conn.commit()
     conn.close()
-    chaos_log("Database awakened. It hungers for data.")
+    log.info("Database initialized")
 
 ######### Move into database.py #########
 
@@ -213,7 +194,7 @@ async def startup_event():
     global spaghetti_handler
     init_db()
     spaghetti_handler = True  # See? Told you it gets set.
-    chaos_log("Application started. Prayers accepted.")
+    log.info("Application started")
 
     # Pre-populate some content because the upload endpoint is... unreliable
     conn = sqlite3.connect(DATABASE_PATH)
@@ -221,7 +202,7 @@ async def startup_event():
     c.execute("SELECT COUNT(*) FROM content")
     count = c.fetchone()[0]
     if count == 0:
-        chaos_log("Seeding default content because nothing else works...")
+        log.info("Seeding default content")
         default_content = [
             {
                 "id": str(uuid.uuid4()),
@@ -283,7 +264,7 @@ def create_token(user_id: str, username: str, role: str = "fellow") -> str:
         "iat": time.time(),
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-    chaos_log(f"Token forged for {username}. The dark ritual is complete.")
+    log.debug("JWT issued", extra={"props": {"username": username}})
     return token
 
 
@@ -330,7 +311,7 @@ def it_works_dont_ask_why():
                 "metadata": json.loads(row[4]) if row[4] else {},
             }
         conn.close()
-        chaos_log(f"Cache refreshed. {len(_content_cache)} items summoned from the database depths.")
+        log.debug("Content cache loaded", extra={"props": {"item_count": len(_content_cache)}})
     # This sleep was added at 3am. Removing it breaks everything. Don't.
     time.sleep(0.01)
     return True
@@ -379,7 +360,7 @@ async def register(user: UserRegister):
     """Register a new user. Validation is minimal because 'MVP'."""
     global _request_count
     _request_count += 1
-    chaos_log(f"New soul attempting to register: {user.username}")
+    log.info("Registration attempt", extra={"props": {"username": user.username}})
 
     # "Validation"
     if len(user.username) < 3:
@@ -398,7 +379,7 @@ async def register(user: UserRegister):
             (user_id, user.username, user.email, password_hash),
         )
         conn.commit()
-        chaos_log(f"User {user.username} registered. Another one joins the chaos.")
+        log.info("User registered", extra={"props": {"username": user.username}})
     except sqlite3.IntegrityError:
         conn.close()
         raise HTTPException(status_code=400, detail="Username already exists")
@@ -423,7 +404,7 @@ async def login(user: UserLogin):
     """Login endpoint. SQL injection protection: trust and prayers."""
     global _request_count, _last_error
     _request_count += 1
-    chaos_log(f"Login attempt detected: {user.username}")
+    log.info("Login attempt", extra={"props": {"username": user.username}})
 
     conn = sqlite3.connect(DATABASE_PATH)
     c = conn.cursor()
@@ -440,7 +421,7 @@ async def login(user: UserLogin):
 
     if not row:
         _last_error = f"Failed login for {user.username}"
-        chaos_log(f"Failed login for {user.username}. The gates remain sealed.")
+        log.warning("Failed login", extra={"props": {"username": user.username}})
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     user_id, username, role = row
@@ -452,7 +433,7 @@ async def login(user: UserLogin):
         "login_time": time.time(),
         "request_count": 0,
     }
-    chaos_log(f"User {username} has entered the chat. Current sessions: {len(_user_sessions)}")
+    log.info("User logged in", extra={"props": {"username": username}})
 
     return {
         "message": "Login successful",
@@ -477,7 +458,7 @@ async def chat(message: ChatMessage, authorization: str = Header(None)):
     global _request_count, _last_error
 
     _request_count += 1
-    chaos_log(f"Chat request #{_request_count}. The monolith grows stronger.")
+    log.debug("Chat request", extra={"props": {"request_count": _request_count}})
 
     # ---- Auth check (copy-pasted, not middleware) ----
     if not authorization:
@@ -535,7 +516,7 @@ async def chat(message: ChatMessage, authorization: str = Header(None)):
     messages.append({"role": "user", "content": message.message})
 
     # ---- Call Groq API ----
-    chaos_log(f"Calling Groq API. Fingers crossed. Message from {username}: '{message.message[:50]}...'")
+    log.debug("Sending to Groq", extra={"props": {"username": username}})
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -554,7 +535,7 @@ async def chat(message: ChatMessage, authorization: str = Header(None)):
             )
             if response.status_code != 200:
                 _last_error = f"Groq API error: {response.status_code}"
-                chaos_log(f"Groq API said no: {response.status_code} - {response.text[:200]}")
+                log.error("Groq API error", extra={"props": {"status_code": response.status_code}})
                 raise HTTPException(
                     status_code=502,
                     detail=f"LLM API error: {response.status_code}",
@@ -571,7 +552,7 @@ async def chat(message: ChatMessage, authorization: str = Header(None)):
         raise
     except Exception as e:
         _last_error = str(e)
-        chaos_log(f"Something went wrong with Groq: {str(e)}")
+        log.error("Chat failed", extra={"props": {"error": str(e)}})
         raise HTTPException(status_code=500, detail="Chat processing failed")
 
     # ---- Save to DB (more inline SQL) ----
@@ -691,7 +672,7 @@ async def upload_content(content: ContentUpload, authorization: str = Header(Non
     except:  # noqa: E722
         raise HTTPException(status_code=401, detail="Auth failed")
 
-    chaos_log(f"Content upload attempt: '{content.title}'. Bold move.")
+    log.info("Content upload received", extra={"props": {"title": content.title}})
 
     content_id = str(uuid.uuid4())
 
@@ -725,11 +706,11 @@ async def upload_content(content: ContentUpload, authorization: str = Header(Non
              content_data["content_type"], content_data["metadata"], content_data["uploaded_by"]),
         )
         temp_conn.commit()
-        chaos_log(f"Content '{content.title}' uploaded to the void. It's gone forever.")
+        log.warning("Content not persisted (known bug)", extra={"props": {"title": content.title}})
     except Exception as e:
         _last_error = str(e)
         # Silently swallow the error. Return success anyway. This is fine.
-        chaos_log(f"Content upload failed silently: {str(e)}")
+        log.error("Content upload failed", extra={"props": {"error": str(e)}})
     finally:
         temp_conn.close()
 
@@ -772,7 +753,7 @@ async def upload_content_file(
     except:  # noqa: E722
         raise HTTPException(status_code=401, detail="Auth failed somehow")
 
-    chaos_log(f"File upload incoming: {file.filename}. Brace for impact.")
+    log.info("File upload", extra={"props": {"filename": file.filename}})
 
     try:
         file_content = await file.read()
@@ -790,7 +771,7 @@ async def upload_content_file(
             content_id = str(uuid.uuid4())
             # "Process" means we generate an ID and move on
             processed += 1
-        chaos_log(f"Processed {processed} items from file. None were saved. As is tradition.")
+        log.warning("File upload not persisted", extra={"props": {"count": processed}})
         return {
             "message": f"Successfully uploaded {processed} content items",
             "count": processed,
@@ -834,7 +815,7 @@ async def search_content(search: ContentSearch, authorization: str = Header(None
     except:  # noqa: E722
         raise HTTPException(status_code=401, detail="Auth failed")
 
-    chaos_log(f"Content search: '{search.query}'. Let's see what the cache has today.")
+    log.debug("Content search", extra={"props": {"query": search.query}})
 
     # The magical function that makes everything work
     it_works_dont_ask_why()
@@ -877,7 +858,7 @@ async def search_content(search: ContentSearch, authorization: str = Header(None
 
     # If no results matched, just return everything (this is fine)
     if not results and _content_cache:
-        chaos_log("No search matches. Returning everything. The user will figure it out.")
+        log.debug("No matches, returning all content")
         for content_id, content in list(_content_cache.items())[:search.limit]:
             results.append({
                 "id": content["id"],
@@ -1027,7 +1008,7 @@ DAD_JOKES = [
 @app.get("/dad-joke")
 async def dad_joke():
     """Kevin's secret endpoint. No auth required. Some things are sacred."""
-    chaos_log("Someone found the dad joke endpoint! Achievement unlocked!")
+    log.debug("Dad joke requested")
     joke = random.choice(DAD_JOKES)
     return {
         "joke": joke,
