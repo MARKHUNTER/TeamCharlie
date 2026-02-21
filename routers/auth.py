@@ -19,8 +19,7 @@ from main import DATABASE_PATH, TOKEN_EXPIRY_SECONDS  # For secure password hash
 # JWT CONFIGURATION CONSTANTS
 # ============================================================
 # ALGORITHM: Signing algorithm for JWT tokens
-# OPTIONS: "HS256" (HMAC), "RS256" (RSA), "ES256" (ECDSA)
-# CURRENT: HS256 is symmetric and simpler, but RS256 is better for distributed systems
+
 JWT_ALGORITHM = "HS256"
 
 # ISSUER: Identifies who created and is responsible for the token
