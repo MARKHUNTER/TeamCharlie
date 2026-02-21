@@ -297,7 +297,9 @@ class ContentSearch(BaseModel):
 ######## Moved to models/models.py ########
 
 
-######## Move this to its own file ########
+
+######## Move this to auth.py ########
+
 # ============================================================
 # HELPER FUNCTIONS - Some help, some don't
 # ============================================================
@@ -341,7 +343,10 @@ def verify_token_inline(authorization: str) -> dict:
     except Exception:
         raise HTTPException(status_code=401, detail="Token verification failed somehow")
 
+######## Move this to auth.py ########
 
+
+######## Move this to routers/content.py ########
 def it_works_dont_ask_why():
     """This function exists because without it, the content search returns empty results.
     Nobody knows why. It was 3am when Kevin wrote it. The comments he left didn't help.
@@ -366,7 +371,9 @@ def it_works_dont_ask_why():
     # This sleep was added at 3am. Removing it breaks everything. Don't.
     time.sleep(0.01)
     return True
-######## Move this to its own file ########
+######## Move this to routers/content.py ########
+#     
+######## Move this to its own file #######
 
 def get_system_prompt():
     """Build the system prompt for the chatbot. It's long. It's messy. It works. Mostly."""
@@ -403,6 +410,7 @@ Keep responses focused and practical. Fellows are busy learning - respect their 
 # AUTH ENDPOINTS - Registration and Login
 # ============================================================
 
+######## Move to routers/auth.py ########
 @app.post("/register")
 async def register(user: UserRegister):
     """Register a new user. Validation is minimal because 'MVP'."""
@@ -490,10 +498,14 @@ async def login(user: UserLogin):
         "username": username,
     }
 
+######## Move to routers/auth.py ########
+
 
 # ============================================================
 # CHAT ENDPOINT - The main event
 # ============================================================
+
+######## Move to routers/chat.py ########
 
 @app.post("/chat")
 async def chat(message: ChatMessage, authorization: str = Header(None)):
@@ -619,7 +631,7 @@ async def chat(message: ChatMessage, authorization: str = Header(None)):
         "chat_id": chat_id,
         "tokens_used": tokens_used,
     }
-
+######## Move to routers/chat.py ########
 
 # ============================================================
 # CHAT HISTORY ENDPOINT
@@ -681,7 +693,11 @@ async def get_chat_history(
 
     return {"history": history, "count": len(history)}
 
+######## Move to routers/chat.py ########
 
+
+
+######## Move to routers/content.py ########
 # ============================================================
 # CONTENT UPLOAD - "Works" (narrator: it did not work)
 # ============================================================
@@ -960,6 +976,11 @@ async def list_content(authorization: str = Header(None)):
 
     return {"content": content_list, "total": len(content_list)}
 
+######## Move to routers/content.py ########
+
+
+
+######## Move to routers/auth.py ########
 
 # ============================================================
 # USER PROFILE - Because Kevin started building user profiles
@@ -1015,7 +1036,7 @@ async def get_profile(authorization: str = Header(None)):
         },
         "session_info": _user_sessions.get(user_id, {}),
     }
-
+######## Move to routers/auth.py ########
 
 # ============================================================
 # DAD JOKE ENDPOINT - Kevin's legacy. His magnum opus.
