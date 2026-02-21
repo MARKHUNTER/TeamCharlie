@@ -26,6 +26,8 @@ from pydantic import BaseModel
 import jwt
 import httpx
 
+######### Move into config.py
+
 # ============================================================
 # CONFIGURATION - All hardcoded because "we'll fix it later"
 # ============================================================
@@ -39,6 +41,9 @@ TOKEN_EXPIRY_SECONDS = 86400  # 24 hours, hardcoded because why not
 magic_number_that_breaks_everything = 42  # Don't change this. Seriously.
 CORS_ORIGINS = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "*"]  # Just allow everything honestly
 MAX_CHAT_HISTORY = 10  # or was it 20? I forget what we decided
+
+######### Move into config.py #########
+
 
 # Global mutable state because architecture is for people with time
 _user_sessions = {}
@@ -71,6 +76,10 @@ def chaos_log(msg):
         print(full_msg)
         _debug_messages.append(full_msg)
 
+
+
+
+######### Move into database.py #########
 
 # ============================================================
 # DATABASE SETUP - Inline because separation of concerns is a myth
@@ -138,6 +147,7 @@ def init_db():
     conn.close()
     chaos_log("Database awakened. It hungers for data.")
 
+######### Move into database.py #########
 
 # ============================================================
 # Brian's code. Brian left. Nobody understands this.
@@ -173,6 +183,9 @@ def init_db():
 #     return sorted(scores, key=lambda x: x[1], reverse=True)
 
 
+
+######### Leave in main.py and move into in __name__ == "__main__" #########
+
 # ============================================================
 # APP INITIALIZATION
 # ============================================================
@@ -183,6 +196,7 @@ app = FastAPI(
     version="0.9.3-beta-rc2-final-FINAL-v2",  # We'll clean up versioning later
 )
 
+######### Move into routers folder #########
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -191,6 +205,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+######### Move into routers folder #########
 
 # Initialize DB on startup. This runs every time. Every. Single. Time.
 @app.on_event("startup")
@@ -246,7 +261,8 @@ async def startup_event():
     conn.close()
 
 
-######## Move this to its own file ########
+######## Moved to models/models.py ########
+
 # ============================================================
 # REQUEST MODELS - Pydantic models, at least we did this right
 # ============================================================
@@ -278,7 +294,7 @@ class ContentSearch(BaseModel):
     query: str
     limit: Optional[int] = 5
 
-######## Move this to its own file ########
+######## Moved to models/models.py ########
 
 
 ######## Move this to its own file ########
