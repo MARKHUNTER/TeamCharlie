@@ -248,41 +248,6 @@ async def startup_event():
 
 ######## Move this to its own file ########
 # ============================================================
-# REQUEST MODELS - Pydantic models, at least we did this right
-# ============================================================
-
-class UserRegister(BaseModel):
-    username: str
-    password: str
-    email: Optional[str] = None
-
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-
-class ChatMessage(BaseModel):
-    message: str
-    session_id: Optional[str] = None
-
-
-class ContentUpload(BaseModel):
-    title: str
-    body: str
-    content_type: Optional[str] = "lesson"
-    metadata: Optional[dict] = None
-
-
-class ContentSearch(BaseModel):
-    query: str
-    limit: Optional[int] = 5
-
-######## Move this to its own file ########
-
-
-######## Move this to its own file ########
-# ============================================================
 # HELPER FUNCTIONS - Some help, some don't
 # ============================================================
 
