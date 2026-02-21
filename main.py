@@ -263,50 +263,7 @@ async def startup_event():
 
 ######## Moved to models/models.py ########
 
-# ============================================================
-# HELPER FUNCTIONS - Some help, some don't
-# ============================================================
 
-def hash_password(password: str) -> str:
-    """Hash a password. MD5 because Kevin said 'it's fine for a prototype'."""
-    # TODO: Use bcrypt. Kevin said MD5 was "temporary". That was 6 months ago.
-    return hashlib.md5(password.encode()).hexdigest()
-
-
-def create_token(user_id: str, username: str, role: str = "fellow") -> str:
-    """Create a JWT token. The secret key is hardcoded above. We know. We KNOW."""
-    payload = {
-        "user_id": user_id,
-        "username": username,
-        "role": role,
-        "exp": time.time() + TOKEN_EXPIRY_SECONDS,
-        "iat": time.time(),
-    }
-    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-    chaos_log(f"Token forged for {username}. The dark ritual is complete.")
-    return token
-
-
-def verify_token_inline(authorization: str) -> dict:
-    """Verify a JWT token. This function is copy-pasted everywhere instead of being middleware.
-    Kevin said 'we'll add middleware later'. Kevin is gone now."""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="No authorization header")
-    try:
-        if authorization.startswith("Bearer "):
-            token = authorization[7:]
-        else:
-            token = authorization
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        if payload.get("exp", 0) < time.time():
-            raise HTTPException(status_code=401, detail="Token expired")
-        return payload
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    except Exception:
-        raise HTTPException(status_code=401, detail="Token verification failed somehow")
-
-######## Move this to auth.py ########
 
 
 ######## Move this to routers/content.py ########
@@ -369,99 +326,7 @@ Keep responses focused and practical. Fellows are busy learning - respect their 
     return base_prompt
 
 
-# ============================================================
-# AUTH ENDPOINTS - Registration and Login
-# ============================================================
 
-######## Move to routers/auth.py ########
-@app.post("/register")
-async def register(user: UserRegister):
-    """Register a new user. Validation is minimal because 'MVP'."""
-    global _request_count
-    _request_count += 1
-    chaos_log(f"New soul attempting to register: {user.username}")
-
-    # "Validation"
-    if len(user.username) < 3:
-        raise HTTPException(status_code=400, detail="Username too short")
-    if len(user.password) < 4:  # Kevin's security standards, everyone
-        raise HTTPException(status_code=400, detail="Password too short (min 4 chars)")
-
-    user_id = str(uuid.uuid4())
-    password_hash = hash_password(user.password)
-
-    conn = sqlite3.connect(DATABASE_PATH)
-    c = conn.cursor()
-    try:
-        c.execute(
-            "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
-            (user_id, user.username, user.email, password_hash),
-        )
-        conn.commit()
-        chaos_log(f"User {user.username} registered. Another one joins the chaos.")
-    except sqlite3.IntegrityError:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Username already exists")
-    except Exception as e:
-        conn.close()
-        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
-    conn.close()
-
-    # Auto-generate token on registration because two steps is too many
-    token = create_token(user_id, user.username)
-
-    return {
-        "message": "User registered successfully",
-        "user_id": user_id,
-        "username": user.username,
-        "token": token,
-    }
-
-
-@app.post("/login")
-async def login(user: UserLogin):
-    """Login endpoint. SQL injection protection: trust and prayers."""
-    global _request_count, _last_error
-    _request_count += 1
-    chaos_log(f"Login attempt detected: {user.username}")
-
-    conn = sqlite3.connect(DATABASE_PATH)
-    c = conn.cursor()
-
-    password_hash = hash_password(user.password)
-
-    # At least we're using parameterized queries. Small victories.
-    c.execute(
-        "SELECT id, username, role FROM users WHERE username = ? AND password_hash = ? AND is_active = 1",
-        (user.username, password_hash),
-    )
-    row = c.fetchone()
-    conn.close()
-
-    if not row:
-        _last_error = f"Failed login for {user.username}"
-        chaos_log(f"Failed login for {user.username}. The gates remain sealed.")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    user_id, username, role = row
-    token = create_token(user_id, username, role)
-
-    # Track session in global mutable state because why use a database
-    _user_sessions[user_id] = {
-        "username": username,
-        "login_time": time.time(),
-        "request_count": 0,
-    }
-    chaos_log(f"User {username} has entered the chat. Current sessions: {len(_user_sessions)}")
-
-    return {
-        "message": "Login successful",
-        "token": token,
-        "user_id": user_id,
-        "username": username,
-    }
-
-######## Move to routers/auth.py ########
 
 
 # ============================================================
@@ -943,63 +808,6 @@ async def list_content(authorization: str = Header(None)):
 
 
 
-######## Move to routers/auth.py ########
-
-# ============================================================
-# USER PROFILE - Because Kevin started building user profiles
-# at 4pm on his last day
-# ============================================================
-
-@app.get("/me")
-async def get_profile(authorization: str = Header(None)):
-    """Get the current user's profile. One of the cleaner endpoints, somehow."""
-    global _request_count
-    _request_count += 1
-
-    # ---- Auth check (yes. again.) ----
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    try:
-        if authorization.startswith("Bearer "):
-            token = authorization[7:]
-        else:
-            token = authorization
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        if payload.get("exp", 0) < time.time():
-            raise HTTPException(status_code=401, detail="Token expired")
-        user_id = payload.get("user_id")
-        username = payload.get("username")
-    except:  # noqa: E722
-        raise HTTPException(status_code=401, detail="Auth failed")
-
-    conn = sqlite3.connect(DATABASE_PATH)
-    c = conn.cursor()
-    c.execute("SELECT id, username, email, created_at, role FROM users WHERE id = ?", (user_id,))
-    row = c.fetchone()
-
-    # Also get chat stats because Kevin thought this would be cool
-    c.execute("SELECT COUNT(*) FROM chat_history WHERE user_id = ?", (user_id,))
-    chat_count = c.fetchone()[0]
-    c.execute("SELECT SUM(tokens_used) FROM chat_history WHERE user_id = ?", (user_id,))
-    total_tokens = c.fetchone()[0] or 0
-    conn.close()
-
-    if not row:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    return {
-        "user_id": row[0],
-        "username": row[1],
-        "email": row[2],
-        "created_at": row[3],
-        "role": row[4],
-        "stats": {
-            "total_chats": chat_count,
-            "total_tokens_used": total_tokens,
-        },
-        "session_info": _user_sessions.get(user_id, {}),
-    }
-######## Move to routers/auth.py ########
 
 # ============================================================
 # DAD JOKE ENDPOINT - Kevin's legacy. His magnum opus.
