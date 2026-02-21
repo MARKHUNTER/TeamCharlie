@@ -4,12 +4,19 @@ import os
 import json
 import time
 from typing import Optional
-
+from fastapi import APIRouter
 import httpx
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
+
 app = FastAPI()
+
+router = APIRouter()
+
+@router.get("/ping")
+async def ping():
+    return {"message": "pong"}
 
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8001")
 CHAT_SERVICE_URL = os.getenv("CHAT_SERVICE)URL", "http://loccalhost:8002")
