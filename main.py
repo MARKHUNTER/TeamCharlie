@@ -26,6 +26,8 @@ from pydantic import BaseModel
 import jwt
 import httpx
 
+######### Move into config.py
+
 # ============================================================
 # CONFIGURATION - All hardcoded because "we'll fix it later"
 # ============================================================
@@ -39,6 +41,9 @@ TOKEN_EXPIRY_SECONDS = 86400  # 24 hours, hardcoded because why not
 magic_number_that_breaks_everything = 42  # Don't change this. Seriously.
 CORS_ORIGINS = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "*"]  # Just allow everything honestly
 MAX_CHAT_HISTORY = 10  # or was it 20? I forget what we decided
+
+######### Move into config.py #########
+
 
 # Global mutable state because architecture is for people with time
 _user_sessions = {}
@@ -71,6 +76,10 @@ def chaos_log(msg):
         print(full_msg)
         _debug_messages.append(full_msg)
 
+
+
+
+######### Move into database.py #########
 
 # ============================================================
 # DATABASE SETUP - Inline because separation of concerns is a myth
@@ -138,6 +147,7 @@ def init_db():
     conn.close()
     chaos_log("Database awakened. It hungers for data.")
 
+######### Move into database.py #########
 
 # ============================================================
 # Brian's code. Brian left. Nobody understands this.
@@ -173,6 +183,9 @@ def init_db():
 #     return sorted(scores, key=lambda x: x[1], reverse=True)
 
 
+
+######### Leave in main.py and move into in __name__ == "__main__" #########
+
 # ============================================================
 # APP INITIALIZATION
 # ============================================================
@@ -183,6 +196,7 @@ app = FastAPI(
     version="0.9.3-beta-rc2-final-FINAL-v2",  # We'll clean up versioning later
 )
 
+######### Move into routers folder #########
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -191,6 +205,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+######### Move into routers folder #########
 
 # Initialize DB on startup. This runs every time. Every. Single. Time.
 @app.on_event("startup")
@@ -246,7 +261,8 @@ async def startup_event():
     conn.close()
 
 
-######## Move this to its own file ########
+######## Moved to models/models.py ########
+
 # ============================================================
 # HELPER FUNCTIONS - Some help, some don't
 # ============================================================
@@ -290,7 +306,10 @@ def verify_token_inline(authorization: str) -> dict:
     except Exception:
         raise HTTPException(status_code=401, detail="Token verification failed somehow")
 
+######## Move this to auth.py ########
 
+
+######## Move this to routers/content.py ########
 def it_works_dont_ask_why():
     """This function exists because without it, the content search returns empty results.
     Nobody knows why. It was 3am when Kevin wrote it. The comments he left didn't help.
@@ -315,7 +334,9 @@ def it_works_dont_ask_why():
     # This sleep was added at 3am. Removing it breaks everything. Don't.
     time.sleep(0.01)
     return True
-######## Move this to its own file ########
+######## Move this to routers/content.py ########
+#     
+######## Move this to its own file #######
 
 def get_system_prompt():
     """Build the system prompt for the chatbot. It's long. It's messy. It works. Mostly."""
@@ -352,6 +373,7 @@ Keep responses focused and practical. Fellows are busy learning - respect their 
 # AUTH ENDPOINTS - Registration and Login
 # ============================================================
 
+######## Move to routers/auth.py ########
 @app.post("/register")
 async def register(user: UserRegister):
     """Register a new user. Validation is minimal because 'MVP'."""
@@ -439,10 +461,14 @@ async def login(user: UserLogin):
         "username": username,
     }
 
+######## Move to routers/auth.py ########
+
 
 # ============================================================
 # CHAT ENDPOINT - The main event
 # ============================================================
+
+######## Move to routers/chat.py ########
 
 @app.post("/chat")
 async def chat(message: ChatMessage, authorization: str = Header(None)):
@@ -568,7 +594,7 @@ async def chat(message: ChatMessage, authorization: str = Header(None)):
         "chat_id": chat_id,
         "tokens_used": tokens_used,
     }
-
+######## Move to routers/chat.py ########
 
 # ============================================================
 # CHAT HISTORY ENDPOINT
@@ -630,7 +656,11 @@ async def get_chat_history(
 
     return {"history": history, "count": len(history)}
 
+######## Move to routers/chat.py ########
 
+
+
+######## Move to routers/content.py ########
 # ============================================================
 # CONTENT UPLOAD - "Works" (narrator: it did not work)
 # ============================================================
@@ -909,6 +939,11 @@ async def list_content(authorization: str = Header(None)):
 
     return {"content": content_list, "total": len(content_list)}
 
+######## Move to routers/content.py ########
+
+
+
+######## Move to routers/auth.py ########
 
 # ============================================================
 # USER PROFILE - Because Kevin started building user profiles
@@ -964,7 +999,7 @@ async def get_profile(authorization: str = Header(None)):
         },
         "session_info": _user_sessions.get(user_id, {}),
     }
-
+######## Move to routers/auth.py ########
 
 # ============================================================
 # DAD JOKE ENDPOINT - Kevin's legacy. His magnum opus.
