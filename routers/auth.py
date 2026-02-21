@@ -15,13 +15,21 @@ import bcrypt
 import jwt
 from main import DATABASE_PATH, TOKEN_EXPIRY_SECONDS  # For secure password hashing (recommended replacement for MD5)
 
+# ============================================================
+# JWT CONFIGURATION CONSTANTS
+# ============================================================
+# ALGORITHM: Signing algorithm for JWT tokens
+# OPTIONS: "HS256" (HMAC), "RS256" (RSA), "ES256" (ECDSA)
+# CURRENT: HS256 is symmetric and simpler, but RS256 is better for distributed systems
+JWT_ALGORITHM = "HS256"
+
+# ISSUER: Identifies who created and is responsible for the token
+# Used for validation to ensure tokens are from trusted source
+TOKEN_ISSUER = "aise-2025-api"
+
 def hash_password(password: str) -> str:
-    """Hash a password. MD5 because Kevin said 'it's fine for a prototype'."""
-    # TODO: Use bcrypt. Kevin said MD5 was "temporary". That was 6 months ago.
-    # WARNING: MD5 is cryptographically broken. This should NEVER be used in production.
-    # SECURITY RISK: Use bcrypt, argon2, or scrypt instead for proper password hashing.
-    # bcrpyt 
-    #return hashlib.md5(password.encode()).hexdigest()
+    # Updated hashing to bcrypt for improved security. MD5 is not suitable for password hashing (Kevin was wrong).
+
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()  # Hash password with bcrypt
 
 def create_token(user_id: str, username: str, role: str = "fellow") -> str:
@@ -45,17 +53,33 @@ def create_token(user_id: str, username: str, role: str = "fellow") -> str:
         # WARNING: Using default secret key - NEVER use in production
         print("WARNING: Using default JWT_SECRET_KEY. Set JWT_SECRET_KEY environment variable in production.")
     
+    # TIMESTAMP: Get current time once for consistency
+    current_time = int(time())  # Convert to integer for JWT standard compliance
+    
     payload = {
-        "user_id": user_id,  # Unique identifier for the user
+        # STANDARD JWT CLAIMS (RFC 7519)
+        "sub": user_id,  # Subject - identifies the principal that is the subject of the JWT
+        "iss": TOKEN_ISSUER,  # Issuer - identifies the principal that issued the JWT (now constant)
+        "iat": current_time,  # Issued-at - time when JWT was issued (integer)
+        "exp": current_time + TOKEN_EXPIRY_SECONDS,  # Expiration time (integer)
+        "nbf": current_time,  # Not before - JWT is valid immediately upon issuance
+        "jti": str(uuid.uuid4()),  # JWT ID - unique identifier for this token (enables revocation/blacklist)
+        
+        # CUSTOM CLAIMS (application-specific)
+        "user_id": user_id,  # Duplicate of sub claim for backward compatibility
         "username": username,  # Username for reference
         "role": role,  # User role (default: "fellow", can be admin, moderator, etc)
-        "exp": time() + TOKEN_EXPIRY_SECONDS,  # Expiration timestamp (integer)
-        "iat": time(),  # Issued-at timestamp (integer)
     }
     # JWT encoding using HS256 algorithm (HMAC with SHA-256)
-    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-    # Log token creation for security auditing
-    chaos_log(f"Token forged for {username}. The dark ritual is complete.")
+    token = jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
+    # AUDIT LOG: Comprehensive security audit trail with all relevant details
+    # Includes: user_id, username, role, token_id (jti), issuer, expiration, timestamp
+    # This enables tracking of token issuance for security investigations
+    chaos_log(
+        f"[AUTH_TOKEN_ISSUED] user_id={user_id} | username={username} | role={role} | "
+        f"jti={payload['jti']} | issuer={TOKEN_ISSUER} | "
+        f"issued_at={current_time} | expires_at={payload['exp']}"
+    )
     return token
 
 
@@ -76,12 +100,16 @@ def verify_token_inline(authorization: str) -> dict:
         else:
             token = authorization  # Use as-is if no Bearer prefix
         # VALIDATION: Decode and verify JWT signature using SECRET_KEY
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        # EXPIRATION CHECK: Verify token hasn't expired
-        if payload.get("exp", 0) < time():
-            raise HTTPException(status_code=401, detail="Token expired")
+        # NOTE: jwt.decode automatically validates exp (expiration) and nbf (not before) claims
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        # ISSUER VALIDATION: Verify this token was issued by our API
+        if payload.get("iss") != TOKEN_ISSUER:
+            raise HTTPException(status_code=401, detail="Invalid token issuer")
         # SUCCESS: Return the decoded payload containing user info
         return payload
+    except jwt.ExpiredSignatureError:
+        # exp claim indicates token has expired
+        raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         # Signature verification failed - token was tampered with or uses wrong key
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -248,16 +276,26 @@ async def get_profile(authorization: str = Header(None)):
         else:
             token = authorization
         # VALIDATION: Decode JWT token using SECRET_KEY
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        # EXPIRATION: Check if token has expired
-        if payload.get("exp", 0) < time():
-            raise HTTPException(status_code=401, detail="Token expired")
-        # EXTRACTION: Get user identifiers from token payload
-        user_id = payload.get("user_id")
+        # NOTE: jwt.decode automatically validates exp and nbf claims
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        # ISSUER VALIDATION: Verify token was issued by our API
+        if payload.get("iss") != TOKEN_ISSUER:
+            raise HTTPException(status_code=401, detail="Invalid token issuer")
+        # EXTRACTION: Get user identifiers from token payload (prefer standard 'sub' claim)
+        user_id = payload.get("sub") or payload.get("user_id")
         username = payload.get("username")
-    except:  # noqa: E722
-        # Generic exception handler - should be more specific
-        raise HTTPException(status_code=401, detail="Auth failed")
+    except jwt.ExpiredSignatureError:
+        # Token has expired
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        # Invalid token signature or format
+        raise HTTPException(status_code=401, detail="Invalid token")
+    except HTTPException:
+        # Re-raise our own HTTP exceptions (issuer validation, etc.)
+        raise
+    except Exception as e:  # Better than bare except
+        # Unexpected error during token verification
+        raise HTTPException(status_code=401, detail=f"Auth failed: {str(e)}")
 
     # DATABASE: Connect to SQLite to fetch full user profile
     conn = sqlite3.connect(DATABASE_PATH)
